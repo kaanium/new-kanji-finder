@@ -1,0 +1,5 @@
+folder=.
+deck=jp
+key=Key
+show_positions=False
+export=False
