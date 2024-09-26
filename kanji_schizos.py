@@ -32,7 +32,9 @@ def read_settings(file_path):
         for line in f:
             if "=" in line:
                 key, value = line.strip().split("=", 1)
-                if value.lower() == 'true':
+                if key == "key":
+                    value = value.split()
+                elif value.lower() == 'true':
                     value = True
                 elif value.lower() == 'false':
                     value = False
@@ -155,7 +157,7 @@ def main(settings_file):
     
     folder = settings.get('folder', '.')
     deck_name = settings.get('deck', 'Mining')
-    key = settings.get('key', 'Word')
+    keys = settings.get('key', ['Word'])
     show_positions = settings.get('show_positions', False)
     export_filename = settings.get('export', False)
 
@@ -173,12 +175,12 @@ def main(settings_file):
 
     notes = get_note_fields(note_ids)
     anki_kanji_list = set()  
-
-    for note in notes:
-        key_field = note['fields'].get(key, {}).get('value', '')
-        for char in key_field:
-            if isKanji(char):
-                anki_kanji_list.add(char)
+    for key in keys:
+        for note in notes:
+            key_field = note['fields'].get(key, {}).get('value', '')
+            for char in key_field:
+                if isKanji(char):
+                    anki_kanji_list.add(char)
 
     print("EPUB files found: ", len(epub_files))
     print("Subtitle files found: ", len(subtitle_files))
