@@ -4,3 +4,4 @@
 | ----------- | ---------------|
 | Caoimhe | @caoimhe.00
 | Tsuu | @tsuu2092
+| Duccoon | @Duccoon
