@@ -23,6 +23,62 @@ cjk_re = re.compile("CJK (UNIFIED|COMPATIBILITY) IDEOGRAPH")
 # Regex pattern to filter out non-Japanese characters
 is_not_japanese_pattern = re.compile(r'[^\p{N}\p{Lu}○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}]+')
 
+kanji_numerals = {
+    '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+}
+
+def export_unknown_kanji_sentences(file_name, kanji_sentences):
+    export_folder = "sentences"
+    if not os.path.exists(export_folder):
+        os.makedirs(export_folder)
+
+    base_file_name = os.path.splitext(os.path.basename(file_name))[0]
+    export_file = os.path.join(export_folder, base_file_name + "_sentences.txt")
+
+    try:
+        with open(export_file, 'w', encoding='utf-8') as file:
+            for kanji, sentences in kanji_sentences.items():
+                file.write(f"Kanji: {kanji}\n")
+                for sentence in sentences:
+                    file.write(f"  Sentence: {sentence}\n")
+                    break
+    except Exception as e:
+        print(f"Failed to export sentences to {export_file}: {e}")
+
+def extract_kanji_with_sentences(text, kanji_list):
+    sentence_separators = r'[「」『』"\'.,!?．。！？…︒︕︖︙\n]'
+
+    sentences = re.split(f"({sentence_separators})", text)
+
+    full_sentences = [
+        sentences[i] + (sentences[i + 1] if i + 1 < len(sentences) else "").strip()
+        for i in range(0, len(sentences), 2)
+    ]
+
+    kanji_sentences = {}
+    for kanji in kanji_list:
+        kanji_sentences[kanji] = [
+            sentence for sentence in full_sentences if kanji in sentence
+        ]
+
+    return kanji_sentences
+
+
+def natural_sort_key(s):
+    try:
+        if not isinstance(s, str):
+            s = str(s)
+
+        def replace_kanji_with_int(text):
+            return kanji_numerals.get(text, text)          
+        return [
+            int(text) if text.isdigit() else replace_kanji_with_int(text) if text in kanji_numerals else text.lower()
+            for text in re.split(r'(\d+|[一二三四五六七八九十]+)', s)
+        ]
+    except Exception as e:
+        print(f"Error processing: {s}, Error: {e}")
+        raise
+
 def isKanji(unichar):
     return bool(cjk_re.match(unicodedata.name(unichar, "")))
 
@@ -120,12 +176,13 @@ def get_epub_subtitle_and_text_files(folder):
     text_files_by_folder = collections.defaultdict(list)
 
     for root, _, filenames in os.walk(folder):
+
         for filename in sorted(filenames):
             if filename.endswith('.epub'):
                 epub_files.append(os.path.join(root, filename))
             elif filename.endswith('.srt'):
                 subtitle_files.append(os.path.join(root, filename))
-            elif filename.endswith('.txt') and filename != "settings.txt":
+            elif filename.endswith('.txt') and not (os.path.basename(root) == "sentences" or os.path.basename(root) == "."):
                 text_files_by_folder[os.path.basename(root)].append(os.path.join(root, filename))
 
     return epub_files, subtitle_files, text_files_by_folder
@@ -159,7 +216,8 @@ def main(settings_file):
     deck_name = settings.get('deck', 'Mining')
     keys = settings.get('key', ['Word'])
     show_positions = settings.get('show_positions', False)
-    export_filename = settings.get('export', False)
+    export_filename = settings.get('export_kanji', False)
+    export_sentences = settings.get('export_sentences', False)
 
     epub_files, subtitle_files, text_files_by_folder = get_epub_subtitle_and_text_files(folder)
     
@@ -187,6 +245,14 @@ def main(settings_file):
     print("Folders with text found: ", len(text_files_by_folder))
     print(f"Total kanji in Anki: {len(anki_kanji_list)}")
 
+    epub_files = sorted(epub_files, key=natural_sort_key)
+    subtitle_files = sorted(subtitle_files, key=natural_sort_key)
+    text_files_by_folder = {
+        folder: sorted(files, key=natural_sort_key) 
+        for folder, files in sorted(text_files_by_folder.items(), key=natural_sort_key)
+    }
+
+
     export_data = {}
 
     # Sets to store total unique kanji and those not in Anki
@@ -194,6 +260,7 @@ def main(settings_file):
     total_unknown_kanji = set()
 
     # Process each EPUB file and compare its kanji with Anki
+    print("\nEPUB files: ")
     for epub_file in epub_files:
         text = extract_text_from_epub(epub_file)
         if text is None:
@@ -210,15 +277,21 @@ def main(settings_file):
         total_unique_kanji.update(book_kanji_list)
         total_unknown_kanji.update(unknown_kanji_list)
 
-        print(f"\n{os.path.basename(epub_file)} : Unique: {len(book_kanji_list)}, not in Anki: {len(unknown_kanji_list)}")
+        print(f"{os.path.basename(epub_file)} : Unique: {len(book_kanji_list)}, not in Anki: {len(unknown_kanji_list)}")
 
         sorted_unique_kanji_list = sorted(unknown_kanji_list, key=lambda k: book_kanji_positions[k][0])
 
-        for kanji in sorted_unique_kanji_list:
-            if show_positions:
+        if show_positions:
+            for kanji in sorted_unique_kanji_list:
                 positions = book_kanji_positions[kanji]
                 print(f"Kanji: {kanji}, Positions: {positions}")
-    
+
+        if export_sentences:
+            kanji_sentences = extract_kanji_with_sentences(text, sorted_unique_kanji_list)
+            export_unknown_kanji_sentences(epub_file, kanji_sentences)
+
+
+    print("\nSubtitle files: ")
     for subtitle_file in subtitle_files:
         subtitle_kanji_positions = extract_kanji_from_subtitle(subtitle_file)
         subtitle_kanji_list = set(subtitle_kanji_positions.keys())
@@ -230,15 +303,17 @@ def main(settings_file):
         total_unique_kanji.update(subtitle_kanji_list)
         total_unknown_kanji.update(unknown_kanji_list)
 
-        print(f"\n{os.path.basename(subtitle_file)} : Unique: {len(subtitle_kanji_list)}, not in Anki: {len(unknown_kanji_list)}")
+        print(f"{os.path.basename(subtitle_file)} : Unique: {len(subtitle_kanji_list)}, not in Anki: {len(unknown_kanji_list)}")
 
         sorted_unique_kanji_list = sorted(unknown_kanji_list, key=lambda k: subtitle_kanji_positions[k][0][0])
 
-        for kanji in sorted_unique_kanji_list:
-            if show_positions:
+        if show_positions:
+            for kanji in sorted_unique_kanji_list:
+
                 positions = subtitle_kanji_positions[kanji]
                 print(f"Kanji: {kanji}, Timestamp: {positions[0][0]}")
 
+    print("\nText files: ")
     # Process text files by folder
     for folder_name, text_files in text_files_by_folder.items():
         combined_text = combine_text_files(text_files)
@@ -254,22 +329,28 @@ def main(settings_file):
 
         sorted_combined_kanji_list = sorted(unknown_combined_kanji_list, key=lambda k: combined_kanji_positions[k][0])
 
-        for kanji in sorted_combined_kanji_list:
-            if show_positions:
+        if show_positions:
+            for kanji in sorted_combined_kanji_list:
                 positions = combined_kanji_positions[kanji]
                 print(f"Kanji: {kanji}, Positions: {positions}")
 
         if export_filename:
             export_data[folder_name] = unknown_combined_kanji_list
 
+        if export_sentences:
+            kanji_sentences = extract_kanji_with_sentences(combined_text, sorted_combined_kanji_list)
+            export_unknown_kanji_sentences(folder_name, kanji_sentences)
+
     total_unique_count = len(total_unique_kanji)
     total_unknown_count = len(total_unknown_kanji)
+
+    if export_filename:
+        export_data["total"] = total_unknown_kanji
+        export_file(export_data)
 
     print(f"\nTotal unique kanji: {total_unique_count}")
     print(f"Total kanji not in Anki: {total_unknown_count}")
 
-    if export_filename:
-        export_file(export_data)
 
     input()
 

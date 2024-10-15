@@ -2,4 +2,5 @@ folder=.
 deck=jp
 key=Key
 show_positions=False
-export=False
+export_kanji=True
+export_sentences=True
