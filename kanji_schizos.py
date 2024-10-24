@@ -106,9 +106,13 @@ def invoke(action, **params):
 
 # Step 2: Get all note IDs from the Anki deck
 def get_deck_notes(deck_name):
-    response = invoke('findNotes', query=f'deck:"{deck_name}"')
-    print(f"Trying to retrieve the notes from deck:{deck_name}")
-    return response['result']
+    decks = deck_name.split(" ")
+    responses = []
+    for deck in decks:
+        print(f"Trying to retrieve the notes from deck:{deck}")
+        response = invoke("findNotes", query=f'deck:"{deck}"')
+        responses += response["result"]
+    return responses
 
 # Step 3: Get note fields from Anki notes
 def get_note_fields(note_ids):
