@@ -33,7 +33,7 @@ The "Kanji Schizos" script identifies unique kanji found in files that aren't in
    - Replace `path/to/folder` with the actual folder path to scan.
    - Set `show_positions` to `True` to print kanji positions.
    - If `export` is `True`, unknown kanji and their files will be exported.
-   - Multiple fields can be added to `key`, separated by spaces (e.g., `key=Word Meaning`).
+   - Multiple fields can be added to `key`, and `deck` separated by spaces (e.g., `key=Word Meaning`).
 
 **How the Script Works:**
 - **Folder Scanning:** The script scans folders recursively.
