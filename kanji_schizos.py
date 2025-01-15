@@ -182,7 +182,7 @@ def get_epub_subtitle_and_text_files(folder):
     for root, _, filenames in os.walk(folder):
 
         for filename in sorted(filenames):
-            if filename.endswith('.epub'):
+            if filename.endswith('.epub') and not os.path.basename(root) == "highlighted_epubs":
                 epub_files.append(os.path.join(root, filename))
             elif filename.endswith('.srt'):
                 subtitle_files.append(os.path.join(root, filename))
@@ -190,6 +190,55 @@ def get_epub_subtitle_and_text_files(folder):
                 text_files_by_folder[os.path.basename(root)].append(os.path.join(root, filename))
 
     return epub_files, subtitle_files, text_files_by_folder
+
+
+def validate_toc(book):
+    for idx, item in enumerate(book.toc):
+        if not hasattr(item, 'uid') or item.uid is None:
+            item.uid = f"item-{idx}"
+
+def correct_js_folder(book):
+    for item in book.get_items():
+        if "../js" in item.file_name:
+            item.file_name = item.file_name.replace("../js", "js")
+
+def highlight_kanji_in_epub(epub_path, kanji_list):
+    try:
+        book = epub.read_epub(epub_path)
+        updated = False
+
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                soup = BeautifulSoup(item.get_body_content(), 'html.parser')
+
+                for kanji in kanji_list:
+                    for text_node in soup.find_all(string=re.compile(kanji)):
+                        highlighted_text = re.sub(
+                            f"({re.escape(kanji)})",
+                            r'<b style="color: darkgreen;">\1</b>',
+                            text_node
+                        )
+                        text_node.replace_with(BeautifulSoup(highlighted_text, 'html.parser'))
+                        updated = True
+
+                if updated:
+                    item.set_content(str(soup))
+
+
+        if updated:
+            highlighted_folder = "highlighted_epubs"
+            os.makedirs(highlighted_folder, exist_ok=True)
+            new_epub_path = os.path.join(highlighted_folder, os.path.splitext(os.path.basename(epub_path))[0] + "_highlighted.epub")
+
+            validate_toc(book)
+            correct_js_folder(book)
+            epub.write_epub(new_epub_path, book)
+            print(f"Created highlighted EPUB: {new_epub_path}")
+        else:
+            print(f"No kanji found to highlight in: {epub_path}")
+
+    except Exception as e:
+        print(f"Failed to highlight kanji in EPUB {epub_path}: {e}")
 
 
 def combine_text_files(text_files):
@@ -222,6 +271,7 @@ def main(settings_file):
     show_positions = settings.get('show_positions', False)
     export_filename = settings.get('export_kanji', False)
     export_sentences = settings.get('export_sentences', False)
+    highlight_kanji = settings.get('highlight_unknown_kanji', False)
 
     epub_files, subtitle_files, text_files_by_folder = get_epub_subtitle_and_text_files(folder)
     
@@ -275,6 +325,8 @@ def main(settings_file):
 
         # Find kanji in the EPUB that are not in Anki
         unknown_kanji_list = book_kanji_list - anki_kanji_list
+        if highlight_kanji:
+            highlight_kanji_in_epub(epub_file, unknown_kanji_list)
         export_data[epub_file] = unknown_kanji_list
 
         # Add kanji to the total sets
